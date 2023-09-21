@@ -1,0 +1,8 @@
+[package]
+name = "gang"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gang-macros = { path = "../gang-macros" }
+bevy_reflect = { version = "0.11.0", features = ["bevy"] }
