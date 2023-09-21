@@ -3,14 +3,10 @@
 //! 	basis: subset of possible products of basis vectors in the GA
 //!
 
-use std::collections::HashMap;
-
 use proc_macro::TokenStream;
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
-use util::{basis_names, element_name_upper};
-
-use crate::util::{element_name, infer, mul_bases};
+use util::{basis_names, element_name, infer, Basis, Element, Sign};
 
 #[proc_macro]
 pub fn gang(input: TokenStream) -> TokenStream {
@@ -19,7 +15,7 @@ pub fn gang(input: TokenStream) -> TokenStream {
 	let dim = ast.base10_parse::<u32>().unwrap();
 
 	// basis elements - products of basis vectors in increasing order
-	let mut elements = Vec::new();
+	let mut elements: Vec<Element> = Vec::new();
 	for i in 0..2_u32.pow(dim) {
 		let mut elem = Vec::new();
 		for j in 0..2_u32.pow(dim) {
@@ -27,27 +23,27 @@ pub fn gang(input: TokenStream) -> TokenStream {
 				elem.push(j)
 			}
 		}
-		elements.push(elem);
+		elements.push(Element(elem));
 	}
-	elements.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(&b)));
+	elements.sort_by(|a, b| a.0.len().cmp(&b.0.len()).then_with(|| a.0.cmp(&b.0)));
 
 	// k-vectors - grade k multivectors
-	let mut kvectors = Vec::new();
+	let mut kvectors: Vec<Basis> = Vec::new();
 	for g in 0..=dim {
-		kvectors.push(
+		kvectors.push(Basis(
 			elements
 				.iter()
 				.cloned()
-				.filter(|c| c.len() as u32 == g)
+				.filter(|c| c.grade() as u32 == g)
 				.collect::<Vec<_>>(),
-		)
+		))
 	}
 
 	// rotor - sum of 2k-vectors
-	let mut rotor_basis = Vec::new();
+	let mut rotor_basis = Basis(Vec::new());
 	for c in &elements {
-		if c.len() % 2 == 0 {
-			rotor_basis.push(c.clone());
+		if c.grade() % 2 == 0 {
+			rotor_basis.0.push(c.clone());
 		}
 	}
 
@@ -55,10 +51,11 @@ pub fn gang(input: TokenStream) -> TokenStream {
 	let mut gen: Vec<proc_macro2::TokenStream> = vec![];
 
 	let gen_specialized_mv_struct =
-		|gen: &mut Vec<proc_macro2::TokenStream>, name: &Ident, basis: &[Vec<u32>]| {
+		|gen: &mut Vec<proc_macro2::TokenStream>, name: &Ident, basis: &Basis| {
 			let bases = basis
+				.0
 				.iter()
-				.map(|c| format_ident!("{}", element_name(&c)))
+				.map(|c| format_ident!("{}", element_name(c)))
 				.collect::<Vec<_>>();
 
 			let constants_tokens = generate::constants(basis);
@@ -90,6 +87,7 @@ pub fn gang(input: TokenStream) -> TokenStream {
 		let name = format_ident!("V{k}");
 		gen_specialized_mv_struct(&mut gen, &name, &basis);
 		let bases = basis
+			.0
 			.iter()
 			.map(|c| format_ident!("{}", element_name(&c)))
 			.collect::<Vec<_>>();
@@ -118,8 +116,9 @@ pub fn gang(input: TokenStream) -> TokenStream {
 
 	{
 		let element_names = rotor_basis
+			.0
 			.iter()
-			.filter(|c| !c.is_empty())
+			.filter(|c| !c.0.is_empty()) // <--- ????
 			.map(|c| format_ident!("{}", element_name(&c)))
 			.collect::<Vec<_>>();
 		gen_specialized_mv_struct(&mut gen, &format_ident!("Rot"), &rotor_basis);
@@ -141,12 +140,14 @@ pub fn gang(input: TokenStream) -> TokenStream {
 		});
 
 		let v2_elements: Vec<_> = rotor_basis
+			.0
 			.iter()
-			.filter_map(|e| (e.len() == 2).then_some(element_name(e)))
+			.filter_map(|e| (e.grade() == 2).then_some(element_name(e)))
 			.collect();
 		let missing_elements: Vec<_> = rotor_basis
+			.0
 			.iter()
-			.filter_map(|e| (e.len() != 0 && e.len() != 2).then_some(element_name(e)))
+			.filter_map(|e| (e.grade() != 0 && e.grade() != 2).then_some(element_name(e)))
 			.collect();
 		gen.push(quote! {
 			impl Rot {
@@ -206,9 +207,9 @@ mod generate;
 mod util;
 
 // type Unit = Vec<u32>;
-type BasisOld = [Vec<u32>];
+// type BasisOld = [Vec<u32>];
 
-fn impl_add(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &BasisOld) {
+fn impl_add(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis) {
 	let element_names = basis_names(basis);
 	gen.push(quote! {
 		impl std::ops::Add<#kind> for #kind {
@@ -232,7 +233,7 @@ fn impl_add(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis
 	});
 }
 
-fn impl_sub(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &BasisOld) {
+fn impl_sub(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis) {
 	let element_names = basis_names(basis);
 	gen.push(quote! {
 		impl std::ops::Sub<#kind> for #kind {
@@ -259,36 +260,17 @@ fn impl_sub(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis
 fn impl_mul(
 	gen: &mut Vec<proc_macro2::TokenStream>,
 	elements: &[Element],
-	lhs: (Ident, &BasisOld),
-	rhs: (Ident, &BasisOld),
+	lhs: (Ident, &Basis),
+	rhs: (Ident, &Basis),
 ) {
 	let lhs_name = lhs.0;
 	let rhs_name = rhs.0;
 
 	let (calc_map, output_kind) = {
-		let map = util::mul_bases2(&[
-			&util::Basis(lhs.1.iter().map(|u| util::Unit(u.clone())).collect()),
-			&util::Basis(rhs.1.iter().map(|u| util::Unit(u.clone())).collect()),
-		]);
+		let map = util::mul_bases(&[&lhs.1, &rhs.1]);
 		(
-			map.iter()
-				.map(|(unit, terms)| {
-					(
-						unit.0.clone(),
-						terms
-							.iter()
-							.map(|(sign, terms)| {
-								(
-									*sign == util::Sign::Neg,
-									terms[0].0.clone(),
-									terms[1].0.clone(),
-								)
-							})
-							.collect::<Vec<_>>(),
-					)
-				})
-				.collect::<HashMap<_, _>>(),
-			infer(map.keys().map(|unit| unit.0.clone()).collect::<Vec<_>>()),
+			map.0.clone(),
+			infer(map.0.keys().cloned().collect::<Vec<_>>()),
 		)
 	};
 
@@ -299,26 +281,26 @@ fn impl_mul(
 		let term_name = element_name(&term);
 		rows.push(quote! { #term_name : });
 		if let Some(sum) = calc_map.get(&term) {
-			for (i, (sign, lhs, rhs)) in sum.iter().enumerate() {
-				if *sign {
-					rows.push(quote! {-})
-				} else if i != 0 {
-					rows.push(quote! {+})
+			for (i, (sign, terms)) in sum.iter().enumerate() {
+				match sign {
+					Sign::Neg => rows.push(quote! {-}),
+					Sign::Pos if i != 0 => rows.push(quote! {+}),
+					_ => {}
 				}
-				let lhs_name = element_name(&lhs);
-				let rhs_name = element_name(&rhs);
-				rows.push(quote! { self.#lhs_name * rhs.#rhs_name})
+				let lhs_name = element_name(&terms[0]);
+				let rhs_name = element_name(&terms[1]);
+				rows.push(quote! { self.#lhs_name * rhs.#rhs_name});
 			}
 		} else {
-			rows.push(quote! { 0.0 })
+			rows.push(quote! { 0.0 });
 		}
-		rows.push(quote! {,})
+		rows.push(quote! {,});
 	}
 
 	gen.push(quote! {
-		impl std::ops::Mul<#lhs_name> for #rhs_name {
+		impl std::ops::Mul<#rhs_name> for #lhs_name {
 			type Output = #output_kind;
-			fn mul(self, rhs: #lhs_name) -> Self::Output {
+			fn mul(self, rhs: #rhs_name) -> Self::Output {
 				Self::Output {
 					#(#rows)*
 				}
@@ -327,7 +309,7 @@ fn impl_mul(
 	});
 }
 
-type Element = Vec<u32>;
+// type Element = Vec<u32>;
 
 #[derive(Clone, Copy)]
 enum MvKind {
@@ -339,11 +321,15 @@ enum MvKind {
 impl MvKind {
 	pub fn get_elements(&self, elements: &[Element]) -> Vec<Element> {
 		match self {
-			MvKind::KVector(k) => elements.iter().cloned().filter(|e| e.len() == *k).collect(),
+			MvKind::KVector(k) => elements
+				.iter()
+				.cloned()
+				.filter(|e| e.0.len() == *k)
+				.collect(),
 			MvKind::Rotor => elements
 				.iter()
 				.cloned()
-				.filter(|e| e.len() % 2 == 0)
+				.filter(|e| e.0.len() % 2 == 0)
 				.collect(),
 			MvKind::General => elements.to_owned(),
 		}

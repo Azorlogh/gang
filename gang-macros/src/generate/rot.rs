@@ -1,31 +1,87 @@
 use quote::quote;
 
 use crate::{
-	util::{element_name, element_name_upper, mul_bases},
+	util::{element_name, impl_mul_bases, Basis, MulResult, Sign},
 	MvKind,
 };
 
+// todo: remove duplicate terms in the sums
 pub(crate) fn impl_rotate(
 	gen: &mut Vec<proc_macro2::TokenStream>,
-	rotor_basis: &[Vec<u32>],
+	rotor_basis: &Basis,
 	kind: MvKind,
-	rhs_basis: &[Vec<u32>],
-) -> proc_macro2::TokenStream {
-	let mut tokens = proc_macro2::TokenStream::new();
+	rhs_basis: &Basis,
+) {
+	let mut result = MulResult::identity();
 
-	// let (calc_map, output_kind) = mul_bases(lhs.1, rhs.1);
+	result = impl_mul_bases(
+		&result,
+		&rotor_basis
+			.0
+			.iter()
+			.map(|r| (Sign::Pos, r.clone()))
+			.collect::<Vec<_>>(),
+	);
 
-	// tokens.extend(quote! {
-	// 	impl Rotate<#kind> for Rot {
-	// 		type Output = #kind;
+	result = impl_mul_bases(
+		&result,
+		&rhs_basis
+			.0
+			.iter()
+			.map(|r| (Sign::Pos, r.clone()))
+			.collect::<Vec<_>>(),
+	);
 
-	// 		fn rotate(self, rhs: #kind) -> Self::Output {
-	// 			#kind {
+	result = impl_mul_bases(
+		&result,
+		&rotor_basis
+			.0
+			.iter()
+			.map(|r| {
+				(
+					match r.grade() / 2 % 2 {
+						0 => Sign::Pos,
+						1 => Sign::Neg,
+						_ => unreachable!("maths broke"),
+					},
+					r.clone(),
+				)
+			})
+			.collect::<Vec<_>>(),
+	);
 
-	// 			}
-	// 		}
-	// 	}
-	// });
+	let output_basis = rhs_basis;
 
-	tokens
+	let mut rows = vec![];
+	for term in &output_basis.0 {
+		let term_name = element_name(&term);
+		rows.push(quote! { #term_name : });
+		if let Some(sum) = result.0.get(&term) {
+			for (i, (sign, factors)) in sum.iter().enumerate() {
+				match sign {
+					Sign::Neg => rows.push(quote! {-}),
+					Sign::Pos if i != 0 => rows.push(quote! {+}),
+					_ => {}
+				}
+				let rot_factor = element_name(&factors[0]);
+				let rhs_name = element_name(&factors[1]);
+				let rotd_factor = element_name(&factors[2]);
+				rows.push(quote! { self.#rot_factor*rhs.#rhs_name*self.#rotd_factor});
+			}
+		} else {
+			rows.push(quote! { 0.0 });
+		}
+		rows.push(quote! {,});
+	}
+
+	gen.push(quote! {
+		impl Rotate<#kind> for Rot {
+			type Output = #kind;
+			fn rotate(self, rhs: #kind) -> Self::Output {
+				Self::Output {
+					#(#rows)*
+				}
+			}
+		}
+	});
 }
