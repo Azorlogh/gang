@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use proc_macro2::Ident;
 use quote::format_ident;
 
-use crate::{Basis, Element, MvKind};
+use crate::{BasisOld, Element, MvKind};
 
 pub(crate) fn gnome_sort(input: &[u32]) -> (i32, Vec<u32>) {
 	let mut v = input.to_vec();
@@ -30,8 +30,8 @@ pub(crate) fn gnome_sort(input: &[u32]) -> (i32, Vec<u32>) {
 }
 
 pub(crate) fn mul_bases(
-	x0: &Basis,
-	x1: &Basis,
+	x0: &BasisOld,
+	x1: &BasisOld,
 ) -> (HashMap<Vec<u32>, Vec<(bool, Vec<u32>, Vec<u32>)>>, MvKind) {
 	let mut pairs = Vec::new();
 	for i in 0..x0.len() {
@@ -64,6 +64,95 @@ pub(crate) fn mul_bases(
 		}
 	}
 	(map.clone(), infer(set))
+}
+
+pub(crate) fn mul_bases2(bases: &[&Basis]) -> HashMap<Unit, Vec<(Sign, Vec<Unit>)>> {
+	type Term = HashMap<Unit, Vec<(Sign, Vec<Unit>)>>;
+
+	fn impl_mul_bases(a: &Term, b: &Basis) -> Term {
+		let mut out: Term = Default::default();
+		for a_unit in a.keys() {
+			for b_unit in &b.0 {
+				let (sign, resulting_unit) = (*a_unit).clone() * (*b_unit).clone();
+
+				println!("{:?}*{:?}={:?}{:?}", a_unit, b_unit, sign, resulting_unit);
+
+				let already = out.get(&resulting_unit);
+				match already {
+					Some(v) => {
+						let mut v = v.clone();
+						v.extend(
+							a[&a_unit]
+								.clone()
+								.into_iter()
+								.map(|(s, term)| (s * sign, [term, vec![b_unit.clone()]].concat())),
+						);
+						out.insert(resulting_unit, v.clone());
+					}
+					None => {
+						out.insert(
+							resulting_unit,
+							a[&a_unit]
+								.clone()
+								.into_iter()
+								.map(|(s, term)| (s * sign, [term, vec![b_unit.clone()]].concat()))
+								.collect::<Vec<_>>(),
+						);
+					}
+				}
+			}
+		}
+		out
+	}
+
+	let mut out: Term = [(Unit(vec![]), vec![(Sign::Pos, vec![])])].into();
+
+	for b in bases.iter().map(|base| base) {
+		println!("{:?}", out);
+		out = impl_mul_bases(&out, &b);
+	}
+	println!("{:?}", out);
+
+	out
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Unit(pub Vec<u32>);
+pub struct Basis(pub Vec<Unit>);
+
+impl std::ops::Mul<Unit> for Unit {
+	type Output = (Sign, Unit);
+	fn mul(self, rhs: Unit) -> Self::Output {
+		let b = [self.0, rhs.0].concat();
+		let (sign, b) = gnome_sort(&b);
+		(Sign::from(sign), Unit(b))
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sign {
+	Pos,
+	Neg,
+}
+
+impl std::ops::Mul<Sign> for Sign {
+	type Output = Sign;
+
+	fn mul(self, rhs: Sign) -> Self::Output {
+		match self == rhs {
+			true => Sign::Pos,
+			false => Sign::Neg,
+		}
+	}
+}
+
+impl From<i32> for Sign {
+	fn from(value: i32) -> Self {
+		match value >= 0 {
+			true => Sign::Pos,
+			false => Sign::Neg,
+		}
+	}
 }
 
 pub(crate) fn element_name(base: &[u32]) -> Ident {

@@ -3,6 +3,8 @@
 //! 	basis: subset of possible products of basis vectors in the GA
 //!
 
+use std::collections::HashMap;
+
 use proc_macro::TokenStream;
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
@@ -62,7 +64,7 @@ pub fn gang(input: TokenStream) -> TokenStream {
 			let constants_tokens = generate::constants(basis);
 
 			gen.push(quote! {
-				#[derive(Clone, Copy, PartialEq, bevy_reflect::Reflect, Debug)]
+				// #[derive(Clone, Copy, PartialEq, bevy_reflect::Reflect, Debug)]
 				struct #name {
 					#(
 						#bases: f32,
@@ -203,9 +205,10 @@ pub fn gang(input: TokenStream) -> TokenStream {
 mod generate;
 mod util;
 
-type Basis = [Vec<u32>];
+// type Unit = Vec<u32>;
+type BasisOld = [Vec<u32>];
 
-fn impl_add(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis) {
+fn impl_add(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &BasisOld) {
 	let element_names = basis_names(basis);
 	gen.push(quote! {
 		impl std::ops::Add<#kind> for #kind {
@@ -229,7 +232,7 @@ fn impl_add(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis
 	});
 }
 
-fn impl_sub(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis) {
+fn impl_sub(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &BasisOld) {
 	let element_names = basis_names(basis);
 	gen.push(quote! {
 		impl std::ops::Sub<#kind> for #kind {
@@ -256,13 +259,38 @@ fn impl_sub(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis
 fn impl_mul(
 	gen: &mut Vec<proc_macro2::TokenStream>,
 	elements: &[Element],
-	lhs: (Ident, &Basis),
-	rhs: (Ident, &Basis),
+	lhs: (Ident, &BasisOld),
+	rhs: (Ident, &BasisOld),
 ) {
 	let lhs_name = lhs.0;
 	let rhs_name = rhs.0;
 
-	let (calc_map, output_kind) = mul_bases(lhs.1, rhs.1);
+	let (calc_map, output_kind) = {
+		let map = util::mul_bases2(&[
+			&util::Basis(lhs.1.iter().map(|u| util::Unit(u.clone())).collect()),
+			&util::Basis(rhs.1.iter().map(|u| util::Unit(u.clone())).collect()),
+		]);
+		(
+			map.iter()
+				.map(|(unit, terms)| {
+					(
+						unit.0.clone(),
+						terms
+							.iter()
+							.map(|(sign, terms)| {
+								(
+									*sign == util::Sign::Neg,
+									terms[0].0.clone(),
+									terms[1].0.clone(),
+								)
+							})
+							.collect::<Vec<_>>(),
+					)
+				})
+				.collect::<HashMap<_, _>>(),
+			infer(map.keys().map(|unit| unit.0.clone()).collect::<Vec<_>>()),
+		)
+	};
 
 	let output_basis = output_kind.get_elements(elements);
 
