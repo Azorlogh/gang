@@ -2,7 +2,9 @@ use quote::quote;
 
 use crate::util::{element_name, element_name_upper, Basis};
 
+mod kvector;
 mod rot;
+pub(crate) use kvector::kvector_methods;
 pub(crate) use rot::impl_rotate;
 
 pub fn constants(basis: &Basis) -> proc_macro2::TokenStream {

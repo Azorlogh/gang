@@ -1,18 +1,17 @@
 use quote::quote;
 
 use crate::{
-	util::{element_name, impl_mul_bases, Basis, MulResult, Sign},
+	util::{element_name, impl_mul_bases, Basis, LinearCombinations, Sign},
 	MvKind,
 };
 
-// todo: remove duplicate terms in the sums
 pub(crate) fn impl_rotate(
 	gen: &mut Vec<proc_macro2::TokenStream>,
 	rotor_basis: &Basis,
 	kind: MvKind,
 	rhs_basis: &Basis,
 ) {
-	let mut result = MulResult::identity();
+	let mut result = LinearCombinations::one();
 
 	result = impl_mul_bases(
 		&result,
@@ -57,7 +56,7 @@ pub(crate) fn impl_rotate(
 		let term_name = element_name(&term);
 		rows.push(quote! { #term_name : });
 		if let Some(sum) = result.0.get(&term) {
-			for (i, (sign, factors)) in sum.iter().enumerate() {
+			for (i, (sign, factors)) in sum.0.iter().enumerate() {
 				match sign {
 					Sign::Neg => rows.push(quote! {-}),
 					Sign::Pos if i != 0 => rows.push(quote! {+}),
@@ -75,7 +74,7 @@ pub(crate) fn impl_rotate(
 	}
 
 	gen.push(quote! {
-		impl Rotate<#kind> for Rot {
+		impl gang::Rotate<#kind> for Rot {
 			type Output = #kind;
 			fn rotate(self, rhs: #kind) -> Self::Output {
 				Self::Output {

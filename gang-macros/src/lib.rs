@@ -1,12 +1,7 @@
-//!
-//! Terminology:
-//! 	basis: subset of possible products of basis vectors in the GA
-//!
-
 use proc_macro::TokenStream;
 use quote::{format_ident, quote, ToTokens, TokenStreamExt};
 use syn::Ident;
-use util::{basis_names, element_name, infer, Basis, Element, Sign};
+use util::{element_name, infer, Basis, Element, Sign};
 
 #[proc_macro]
 pub fn gang(input: TokenStream) -> TokenStream {
@@ -51,18 +46,22 @@ pub fn gang(input: TokenStream) -> TokenStream {
 	let mut gen: Vec<proc_macro2::TokenStream> = vec![];
 
 	let gen_specialized_mv_struct =
-		|gen: &mut Vec<proc_macro2::TokenStream>, name: &Ident, basis: &Basis| {
+		|gen: &mut Vec<proc_macro2::TokenStream>, name: &Ident, basis: &Basis, constants: bool| {
 			let bases = basis
 				.0
 				.iter()
 				.map(|c| format_ident!("{}", element_name(c)))
 				.collect::<Vec<_>>();
 
-			let constants_tokens = generate::constants(basis);
+			let constants_tokens = if constants {
+				generate::constants(basis)
+			} else {
+				proc_macro2::TokenStream::new()
+			};
 
 			gen.push(quote! {
-				// #[derive(Clone, Copy, PartialEq, bevy_reflect::Reflect, Debug)]
-				struct #name {
+				#[derive(Clone, Copy, PartialEq, bevy_reflect::Reflect, Debug)]
+				pub struct #name {
 					#(
 						#bases: f32,
 					)*
@@ -85,7 +84,7 @@ pub fn gang(input: TokenStream) -> TokenStream {
 	// generate k-vectors
 	for (k, basis) in kvectors.iter().enumerate() {
 		let name = format_ident!("V{k}");
-		gen_specialized_mv_struct(&mut gen, &name, &basis);
+		gen_specialized_mv_struct(&mut gen, &name, &basis, true);
 		let bases = basis
 			.0
 			.iter()
@@ -115,19 +114,19 @@ pub fn gang(input: TokenStream) -> TokenStream {
 	}
 
 	{
-		let element_names = rotor_basis
+		let other_element_names = rotor_basis
 			.0
 			.iter()
-			.filter(|c| !c.0.is_empty()) // <--- ????
+			.filter(|c| !c.0.is_empty()) // e is written explicitly below
 			.map(|c| format_ident!("{}", element_name(&c)))
 			.collect::<Vec<_>>();
-		gen_specialized_mv_struct(&mut gen, &format_ident!("Rot"), &rotor_basis);
+		gen_specialized_mv_struct(&mut gen, &format_ident!("Rot"), &rotor_basis, false);
 		gen.push(quote! {
 			impl Rot {
 				pub const IDENTITY: Self = Self {
 					e: 1.0,
 					#(
-						#element_names: 0.0,
+						#other_element_names: 0.0,
 					)*
 				};
 			}
@@ -151,7 +150,7 @@ pub fn gang(input: TokenStream) -> TokenStream {
 			.collect();
 		gen.push(quote! {
 			impl Rot {
-				fn from_v2_angle(v2: V2, angle: f32) -> Self {
+				pub fn from_v2_angle(v2: V2, angle: f32) -> Self {
 					let a = angle / 2.0;
 					let (s, c) = a.sin_cos();
 					Self {
@@ -175,25 +174,10 @@ pub fn gang(input: TokenStream) -> TokenStream {
 		(format_ident!("Rot"), &rotor_basis),
 	);
 
+	generate::kvector_methods(&mut gen, &kvectors);
+
 	for (k, elements) in kvectors.iter().enumerate() {
 		let kind = MvKind::KVector(k);
-		let element_names = basis_names(elements);
-		gen.push(quote! {
-			impl std::ops::Mul<f32> for #kind {
-				type Output = #kind;
-				fn mul(self, rhs: f32) -> Self::Output {
-					Self::Output {
-						#(
-							#element_names: self.#element_names * rhs,
-						)*
-					}
-				}
-			}
-		});
-
-		impl_add(&mut gen, kind, &elements);
-		impl_sub(&mut gen, kind, &elements);
-
 		generate::impl_rotate(&mut gen, &rotor_basis, kind, &elements);
 	}
 
@@ -205,57 +189,6 @@ pub fn gang(input: TokenStream) -> TokenStream {
 
 mod generate;
 mod util;
-
-// type Unit = Vec<u32>;
-// type BasisOld = [Vec<u32>];
-
-fn impl_add(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis) {
-	let element_names = basis_names(basis);
-	gen.push(quote! {
-		impl std::ops::Add<#kind> for #kind {
-			type Output = #kind;
-			fn add(self, rhs: #kind) -> Self::Output {
-				Self::Output {
-					#(
-						#element_names: self.#element_names + rhs.#element_names,
-					)*
-				}
-			}
-		}
-
-		impl std::ops::AddAssign<#kind> for #kind {
-			fn add_assign(&mut self, rhs: #kind) {
-				#(
-					self.#element_names += rhs.#element_names;
-				)*
-			}
-		}
-	});
-}
-
-fn impl_sub(gen: &mut Vec<proc_macro2::TokenStream>, kind: MvKind, basis: &Basis) {
-	let element_names = basis_names(basis);
-	gen.push(quote! {
-		impl std::ops::Sub<#kind> for #kind {
-			type Output = #kind;
-			fn sub(self, rhs: #kind) -> Self::Output {
-				Self::Output {
-					#(
-						#element_names: self.#element_names - rhs.#element_names,
-					)*
-				}
-			}
-		}
-
-		impl std::ops::SubAssign<#kind> for #kind {
-			fn sub_assign(&mut self, rhs: #kind) {
-				#(
-					self.#element_names -= rhs.#element_names;
-				)*
-			}
-		}
-	});
-}
 
 fn impl_mul(
 	gen: &mut Vec<proc_macro2::TokenStream>,
@@ -281,7 +214,7 @@ fn impl_mul(
 		let term_name = element_name(&term);
 		rows.push(quote! { #term_name : });
 		if let Some(sum) = calc_map.get(&term) {
-			for (i, (sign, terms)) in sum.iter().enumerate() {
+			for (i, (sign, terms)) in sum.0.iter().enumerate() {
 				match sign {
 					Sign::Neg => rows.push(quote! {-}),
 					Sign::Pos if i != 0 => rows.push(quote! {+}),
@@ -311,7 +244,7 @@ fn impl_mul(
 
 // type Element = Vec<u32>;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum MvKind {
 	KVector(usize),
 	Rotor,

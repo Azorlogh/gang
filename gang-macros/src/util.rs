@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+	collections::{BTreeMap, HashSet},
+	fmt::Display,
+};
 
 use proc_macro2::Ident;
 use quote::format_ident;
@@ -29,20 +32,66 @@ pub(crate) fn gnome_sort(input: &[u32]) -> (i32, Vec<u32>) {
 	(sign, v)
 }
 
-pub struct MulResult(pub BTreeMap<Element, Vec<(Sign, Vec<Element>)>>);
+#[derive(Debug, Clone)]
+pub struct LinearCombination(pub Vec<(Sign, Vec<Element>)>);
 
-impl MulResult {
-	pub fn empty() -> Self {
-		Self(Default::default())
-	}
-
-	pub fn identity() -> Self {
-		Self([(Element(vec![]), vec![(Sign::Pos, vec![])])].into())
+impl Display for LinearCombination {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let out = self
+			.0
+			.iter()
+			.map(|(s, els)| {
+				let sign_str = match s {
+					Sign::Pos => "+",
+					Sign::Neg => "-",
+				};
+				let els_str = (els.len() > 0)
+					.then_some(
+						els.iter()
+							.map(|el| format!("{}", el))
+							.collect::<Vec<_>>()
+							.join(" "),
+					)
+					.unwrap_or(String::from("1"));
+				format!("{} {}", sign_str, els_str)
+			})
+			.collect::<Vec<_>>()
+			.join(" ");
+		write!(f, "{}", out)
 	}
 }
 
-pub fn impl_mul_bases(a: &MulResult, b: &[(Sign, Element)]) -> MulResult {
-	let mut out: MulResult = MulResult::empty();
+impl LinearCombination {
+	pub fn one() -> Self {
+		Self(vec![(Sign::Pos, vec![])])
+	}
+}
+
+#[derive(Debug)]
+pub struct LinearCombinations(pub BTreeMap<Element, LinearCombination>);
+
+impl Display for LinearCombinations {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "LinearCombination {{\n")?;
+		for (el, combination) in &self.0 {
+			write!(f, "\t{}: {},\n", el, combination)?;
+		}
+		write!(f, "}}")
+	}
+}
+
+impl LinearCombinations {
+	pub fn zero() -> Self {
+		Self(Default::default())
+	}
+
+	pub fn one() -> Self {
+		Self([(Element(vec![]), LinearCombination::one())].into())
+	}
+}
+
+pub fn impl_mul_bases(a: &LinearCombinations, b: &[(Sign, Element)]) -> LinearCombinations {
+	let mut out: LinearCombinations = LinearCombinations::zero();
 	for a_unit in a.0.keys() {
 		for (b_sign, b_unit) in b {
 			let (sign, resulting_unit) = (*a_unit).clone() * (*b_unit).clone();
@@ -50,7 +99,7 @@ pub fn impl_mul_bases(a: &MulResult, b: &[(Sign, Element)]) -> MulResult {
 			match already {
 				Some(v) => {
 					let mut v = v.clone();
-					v.extend(a.0[&a_unit].clone().into_iter().map(|(s, term)| {
+					v.0.extend(a.0[&a_unit].clone().0.into_iter().map(|(s, term)| {
 						(s * sign * *b_sign, [term, vec![b_unit.clone()]].concat())
 					}));
 					out.0.insert(resulting_unit, v.clone());
@@ -58,13 +107,16 @@ pub fn impl_mul_bases(a: &MulResult, b: &[(Sign, Element)]) -> MulResult {
 				None => {
 					out.0.insert(
 						resulting_unit,
-						a.0[&a_unit]
-							.clone()
-							.into_iter()
-							.map(|(s, term)| {
-								(s * sign * *b_sign, [term, vec![b_unit.clone()]].concat())
-							})
-							.collect::<Vec<_>>(),
+						LinearCombination(
+							a.0[&a_unit]
+								.clone()
+								.0
+								.into_iter()
+								.map(|(s, term)| {
+									(s * sign * *b_sign, [term, vec![b_unit.clone()]].concat())
+								})
+								.collect::<Vec<_>>(),
+						),
 					);
 				}
 			}
@@ -73,8 +125,8 @@ pub fn impl_mul_bases(a: &MulResult, b: &[(Sign, Element)]) -> MulResult {
 	out
 }
 
-pub(crate) fn mul_bases(bases: &[&Basis]) -> MulResult {
-	let mut out: MulResult = MulResult::identity();
+pub(crate) fn mul_bases(bases: &[&Basis]) -> LinearCombinations {
+	let mut out: LinearCombinations = LinearCombinations::one();
 
 	for b in bases.iter().map(|base| base) {
 		out = impl_mul_bases(
@@ -96,7 +148,18 @@ impl Element {
 	}
 }
 
+impl Display for Element {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "e")?;
+		for v in &self.0 {
+			write!(f, "{}", v)?;
+		}
+		Ok(())
+	}
+}
+
 /// Subset of the canonical basis
+#[derive(Debug)]
 pub struct Basis(pub Vec<Element>);
 
 impl std::ops::Mul<Element> for Element {
@@ -108,9 +171,11 @@ impl std::ops::Mul<Element> for Element {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub enum Sign {
+	#[display(fmt = "+")]
 	Pos,
+	#[display(fmt = "-")]
 	Neg,
 }
 
