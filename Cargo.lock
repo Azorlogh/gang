@@ -208,6 +208,7 @@ version = "0.1.0"
 dependencies = [
  "bevy_reflect",
  "gang-macros",
+ "mint",
 ]
 
 [[package]]
@@ -312,6 +313,12 @@ name = "memchr"
 version = "2.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f232d6ef707e1956a43342693d2a31e72989554d58299d7a88738cc95b0d35c"
+
+[[package]]
+name = "mint"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e53debba6bda7a793e5f99b8dacf19e626084f525f7829104ba9898f367d85ff"
 
 [[package]]
 name = "once_cell"

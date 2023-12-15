@@ -3,6 +3,19 @@ name = "gang"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+g2 = []
+g3 = []
+g4 = []
+bevy_reflect = ["dep:bevy_reflect", "gang-macros/bevy_reflect"]
+mint = ["dep:mint"]
+
 [dependencies]
 gang-macros = { path = "../gang-macros" }
-bevy_reflect = { version = "0.11.0", features = ["bevy"] }
+bevy_reflect = { version = "0.11.0", features = ["bevy"], optional = true }
+mint = { version = "0.5.9", optional = true}
+
+[[example]]
+name = "rotation"
+required-features = ["g3"]

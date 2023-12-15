@@ -59,11 +59,20 @@ pub fn gang(input: TokenStream) -> TokenStream {
 				proc_macro2::TokenStream::new()
 			};
 
+			let maybe_bevy_reflect = if cfg!(feature = "bevy_reflect") {
+				quote! {
+					#[derive(bevy_reflect::Reflect)]
+				}
+			} else {
+				proc_macro2::TokenStream::new()
+			};
+
 			gen.push(quote! {
-				#[derive(Clone, Copy, PartialEq, bevy_reflect::Reflect, Debug)]
+				#[derive(Clone, Copy, PartialEq, Debug)]
+				#maybe_bevy_reflect
 				pub struct #name {
 					#(
-						#bases: f32,
+						pub #bases: f32,
 					)*
 				}
 
@@ -156,7 +165,7 @@ pub fn gang(input: TokenStream) -> TokenStream {
 					Self {
 						e: c,
 						#(
-							#v2_elements: v2.#v2_elements*s,
+							#v2_elements: -v2.#v2_elements*s,
 						)*
 						#(
 							#missing_elements: 0.0,
@@ -165,6 +174,27 @@ pub fn gang(input: TokenStream) -> TokenStream {
 				}
 			}
 		});
+
+		if kvectors[2].0.len() == 1 {
+			let single_element = element_name(&kvectors[2].0[0]);
+			// angle() can probably work in 3d too, but I don't think it can work in 4D
+			gen.push(quote! {
+				impl Rot {
+					pub fn from_angle(angle: f32) -> Self {
+						let a = angle / 2.0;
+						let (s, c) = a.sin_cos();
+						Self {
+							e: c,
+							#single_element: -s
+						}
+					}
+
+					pub fn angle(self) -> f32 {
+						2.0*(-self.#single_element).atan2(self.e)
+					}
+				}
+			});
+		}
 	}
 
 	impl_mul(
@@ -176,10 +206,11 @@ pub fn gang(input: TokenStream) -> TokenStream {
 
 	generate::kvector_methods(&mut gen, &kvectors);
 
-	for (k, elements) in kvectors.iter().enumerate() {
-		let kind = MvKind::KVector(k);
-		generate::impl_rotate(&mut gen, &rotor_basis, kind, &elements);
+	for elements in &kvectors {
+		generate::impl_rotate(&mut gen, &rotor_basis, elements);
 	}
+
+	generate::impl_to_matrix(&mut gen, &rotor_basis, &kvectors[1]);
 
 	quote! {
 		#(#gen)*

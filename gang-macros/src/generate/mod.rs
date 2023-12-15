@@ -1,11 +1,12 @@
+use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::util::{element_name, element_name_upper, Basis};
+use crate::util::{basis_names, element_name, element_name_upper, Basis};
 
 mod kvector;
 mod rot;
 pub(crate) use kvector::kvector_methods;
-pub(crate) use rot::impl_rotate;
+pub(crate) use rot::{impl_rotate, impl_to_matrix};
 
 pub fn constants(basis: &Basis) -> proc_macro2::TokenStream {
 	let mut constants_tokens = proc_macro2::TokenStream::new();
@@ -31,4 +32,31 @@ pub fn constants(basis: &Basis) -> proc_macro2::TokenStream {
 		});
 	}
 	constants_tokens
+}
+
+fn impl_normalized(basis: &Basis) -> TokenStream {
+	let els = basis_names(basis);
+	quote! {
+		pub fn norm(self) -> f32 {
+			(
+				#(
+					self.#els*self.#els
+				)+*
+			).sqrt()
+		}
+
+		pub fn normalize(self) -> Self {
+			let norm = self.norm();
+			self * norm.recip()
+		}
+
+		pub fn normalize_or_zero(self) -> Self {
+			let norm = self.norm();
+			if norm == 0.0 {
+				Self::ZERO
+			} else {
+				self * norm.recip()
+			}
+		}
+	}
 }

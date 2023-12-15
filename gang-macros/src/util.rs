@@ -62,6 +62,10 @@ impl Display for LinearCombination {
 }
 
 impl LinearCombination {
+	pub fn zero() -> Self {
+		Self(vec![])
+	}
+
 	pub fn one() -> Self {
 		Self(vec![(Sign::Pos, vec![])])
 	}
