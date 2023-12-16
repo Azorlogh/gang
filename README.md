@@ -2,7 +2,7 @@
 
 Toy crate for geometric algebra geared towards game development.
 
-It allows creating typed N-dimensional VGAs (Clifford algebras with signature Cl(N, 0, 0)) using macros.
+It allows creating strongly typed N-dimensional VGAs (Clifford algebras with signature Cl(N, 0, 0)) using macros. (In practice, this only works for low-dimensional GAs due the combinatorial explosion of types & operations)
 
 It is barely started, most operations are unimplemented. The code is also ugly.
 

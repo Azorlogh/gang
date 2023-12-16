@@ -10,23 +10,27 @@ pub fn gang(input: TokenStream) -> TokenStream {
 	let dim = ast.base10_parse::<u32>().unwrap();
 
 	// basis elements - products of basis vectors in increasing order
-	let mut elements: Vec<Element> = Vec::new();
-	for i in 0..2_u32.pow(dim) {
-		let mut elem = Vec::new();
-		for j in 0..2_u32.pow(dim) {
-			if (i >> j) % 2 == 1 {
-				elem.push(j)
+	let canonical_basis = {
+		let mut basis: Vec<Element> = Vec::new();
+		for i in 0..2_u32.pow(dim) {
+			let mut elem = Vec::new();
+			for j in 0..2_u32.pow(dim) {
+				if (i >> j) % 2 == 1 {
+					elem.push(j)
+				}
 			}
+			basis.push(Element(elem));
 		}
-		elements.push(Element(elem));
-	}
-	elements.sort_by(|a, b| a.0.len().cmp(&b.0.len()).then_with(|| a.0.cmp(&b.0)));
+		basis.sort_by(|a, b| a.0.len().cmp(&b.0.len()).then_with(|| a.0.cmp(&b.0)));
+		Basis(basis)
+	};
 
 	// k-vectors - grade k multivectors
 	let mut kvectors: Vec<Basis> = Vec::new();
 	for g in 0..=dim {
 		kvectors.push(Basis(
-			elements
+			canonical_basis
+				.0
 				.iter()
 				.cloned()
 				.filter(|c| c.grade() as u32 == g)
@@ -36,7 +40,7 @@ pub fn gang(input: TokenStream) -> TokenStream {
 
 	// rotor - sum of 2k-vectors
 	let mut rotor_basis = Basis(Vec::new());
-	for c in &elements {
+	for c in &canonical_basis.0 {
 		if c.grade() % 2 == 0 {
 			rotor_basis.0.push(c.clone());
 		}
@@ -197,14 +201,16 @@ pub fn gang(input: TokenStream) -> TokenStream {
 		}
 	}
 
+	generate::rotor_methods(&mut gen, &rotor_basis);
+
 	impl_mul(
 		&mut gen,
-		&elements,
+		&canonical_basis.0,
 		(format_ident!("Rot"), &rotor_basis),
 		(format_ident!("Rot"), &rotor_basis),
 	);
 
-	generate::kvector_methods(&mut gen, &kvectors);
+	generate::kvector_methods(&mut gen, &canonical_basis, &kvectors);
 
 	for elements in &kvectors {
 		generate::impl_rotate(&mut gen, &rotor_basis, elements);

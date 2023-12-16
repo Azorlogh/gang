@@ -1,8 +1,39 @@
 use quote::{quote, ToTokens};
 
 use crate::util::{
-	element_name, impl_mul_bases, Basis, LinearCombination, LinearCombinations, Sign,
+	basis_names, element_name, impl_mul_bases, Basis, LinearCombination, LinearCombinations, Sign,
 };
+
+pub(crate) fn rotor_methods(gen: &mut Vec<proc_macro2::TokenStream>, rotor_basis: &Basis) {
+	let els = basis_names(rotor_basis);
+	gen.push(quote! {
+		impl std::ops::Mul<f32> for Rot {
+			type Output = Self;
+			fn mul(self, rhs: f32) -> Self::Output {
+				Self::Output {
+					#(
+						#els: self.#els * rhs,
+					)*
+				}
+			}
+		}
+
+		impl Rot {
+			pub fn norm(self) -> f32 {
+				(
+					#(
+						self.#els*self.#els
+					)+*
+				).sqrt()
+			}
+
+			pub fn normalize(self) -> Self {
+				let norm = self.norm();
+				self * norm.recip()
+			}
+		}
+	});
+}
 
 pub(crate) fn impl_to_matrix(
 	gen: &mut Vec<proc_macro2::TokenStream>,

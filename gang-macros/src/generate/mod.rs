@@ -6,7 +6,7 @@ use crate::util::{basis_names, element_name, element_name_upper, Basis};
 mod kvector;
 mod rot;
 pub(crate) use kvector::kvector_methods;
-pub(crate) use rot::{impl_rotate, impl_to_matrix};
+pub(crate) use rot::{impl_rotate, impl_to_matrix, rotor_methods};
 
 pub fn constants(basis: &Basis) -> proc_macro2::TokenStream {
 	let mut constants_tokens = proc_macro2::TokenStream::new();

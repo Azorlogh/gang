@@ -4,12 +4,18 @@ pub trait Rotate<Rhs = Self> {
 	fn rotate(self, rhs: Rhs) -> Self::Output;
 }
 
+pub trait Wedge<Rhs = Self> {
+	type Output;
+
+	fn wedge(self, rhs: Rhs) -> Self::Output;
+}
+
 pub use gang_macros::gang;
 
 #[cfg(feature = "g2")]
 pub mod g2 {
 	use crate as gang;
-	pub use crate::Rotate;
+	pub use crate::prelude::*;
 	gang_macros::gang!(2);
 
 	#[cfg(feature = "mint")]
@@ -37,13 +43,17 @@ pub mod g2 {
 #[cfg(feature = "g3")]
 pub mod g3 {
 	use crate as gang;
-	pub use crate::Rotate;
+	pub use crate::prelude::*;
 	gang_macros::gang!(3);
 }
 
 #[cfg(feature = "g4")]
 pub mod g4 {
 	use crate as gang;
-	pub use crate::Rotate;
+	pub use crate::prelude::*;
 	gang_macros::gang!(4);
+}
+
+mod prelude {
+	pub use super::{Rotate, Wedge};
 }
