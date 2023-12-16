@@ -8,6 +8,7 @@ default = []
 g2 = []
 g3 = []
 g4 = []
+g5 = []
 bevy_reflect = ["dep:bevy_reflect", "gang-macros/bevy_reflect"]
 mint = ["dep:mint"]
 

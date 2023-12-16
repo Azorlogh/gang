@@ -54,6 +54,13 @@ pub mod g4 {
 	gang_macros::gang!(4);
 }
 
+#[cfg(feature = "g5")]
+pub mod g5 {
+	use crate as gang;
+	pub use crate::prelude::*;
+	gang_macros::gang!(5);
+}
+
 mod prelude {
 	pub use super::{Rotate, Wedge};
 }

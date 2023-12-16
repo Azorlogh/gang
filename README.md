@@ -1,25 +1,26 @@
-# Gang
+# Gang (⚠ very incomplete)
 
-Toy crate for geometric algebra geared towards game development.
+Toy crate for vector geometric algebras geared towards game development.
 
-It allows creating strongly typed N-dimensional VGAs (Clifford algebras with signature Cl(N, 0, 0)) using macros. (In practice, this only works for low-dimensional GAs due the combinatorial explosion of types & operations)
+Has strongly-typed VGAs from dimensions 2 to 5.
 
-It is barely started, most operations are unimplemented. The code is also ugly.
-
-Currently implements VGA only but could be expanded in theory.
+The types and methods are generated from a proc macro, which could work for more dimensions in theory, but the combinatorial nature of higher dimensions make this impractical.
 
 ## Why?
 
-Why not? Also, to make 4d games. And because geometric algebra is very elegant, even in 2d/3d.
+Because geometric algebra is elegant, and makes it easier to work in higher dimensions.
+Also, why not? 😄
 
 ## Implementation status
 
 - [x] Addition/Subtraction
 - [x] Scalar multiplication
-- [x] Rotor multiplication
 - [x] Rotor::rotate
-- [ ] VK multiplication
-- [ ] Wedge product
+- [ ] Geometric product
+  - [x] For rotors
+  - [ ] For V1
+  - [ ] ??
+- [x] Wedge product
 - [ ] Left-contraction
 - [ ] Right contraction
 - [ ] Scalar product
@@ -28,9 +29,9 @@ Why not? Also, to make 4d games. And because geometric algebra is very elegant, 
 
 ## How to use
 
-If you want 2d or 3d VGA, you can use `gang::g2` or `gang::g3` (using features `dim2` and `dim3` respectively).
+Enable features `g2`, `g3`, `g4` or `g5`, and use the types in `gang::g2`, `gang::g3`, etc.
 
-The axes are numbered from starting from 0: e0, e1, e2...
+The axes are numbered starting from 0: `e0`, `e1`, `e2`...
 
 There are two kinds of types currently in these modules:
 
@@ -47,8 +48,6 @@ use std::f32::consts::TAU;
 let myvector = V1::new(1.0, 2.0, 3.0);
 let myrotor = Rot::from_v2_angle(V2::E01, TAU / 4.0);
 println!("{:.2?}", myrotor.rotate(myvector));
-V1 { e0: -2.00, e1: 1.00, e2: 3.00 }
+// V1 { e0: -2.00, e1: 1.00, e2: 3.00 }
 ```
-
-This macro can be used to make arbitrary VGAs: `gang_macros::gang!(N);`
 
